@@ -1,0 +1,40 @@
+# Maintainer: John Baier <ebusd@ebusd.eu>
+# Contributor: Milan Knizek <knizek volny cz>
+# Usage: makepkg
+pkgname=ebusd
+pkgver=3.2
+pkgrel=1
+pkgdesc="ebusd, the daemon for communication with eBUS heating systems."
+arch=('i686' 'x86_64' 'armv6h' 'armv7h' 'aarch64')
+url=https://github.com/john30/ebusd/
+license=('GPL3')
+depends=()
+optdepends=()
+conflicts=('ebusd' 'ebusd-git')
+provides=('ebusd')
+install=ebusd.install
+options=()
+backup=('etc/conf.d/ebusd')
+source=("https://github.com/john30/${pkgname}/archive/v${pkgver}.tar.gz")
+
+pkgver() {
+  cat "${srcdir}/${pkgname}-${pkgver}/VERSION"|sed -e 's#-#_#g'
+}
+
+build() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+  ./autogen.sh
+  make -j1
+}
+
+package() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+  make DESTDIR="$pkgdir" install-strip
+
+  install -d                                              "${pkgdir}/usr/lib/systemd/system"
+  install -m 0644 contrib/archlinux/systemd/ebusd.service "${pkgdir}/usr/lib/systemd/system"
+  install -d                                              "${pkgdir}/etc/conf.d"
+  install -m 0644 contrib/archlinux/conf.d/ebusd          "${pkgdir}/etc/conf.d/ebusd"
+}
+# update md5sums: updpkgsums
+md5sums=('413886187f5e93138674cbea916ad1fb')

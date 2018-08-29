@@ -1,0 +1,10 @@
+{
+	"title": "DCF",
+	"bounds": [140,0,54,48],
+	"image": "dcf.svg",
+	"image-pos": [10, 10],
+	"items": [
+		{"name": "datetime", "format": "$outsidetemp", "top": 0, "left": 1},
+		{"name": "datetime", "format": "$date $time", "top": 0.45, "left": 1}
+	]
+}

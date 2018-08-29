@@ -1,0 +1,12 @@
+{
+	"title": "Warmwasser",
+	"bounds": [516,0,161,52],
+	"image": "hwc.svg",
+	"endpoints": [
+		{"name": "Flow", "anchor": [0, 0.82, -1, 0], "target": true, "distance": [40,0,0.5], "connectWith": [null, "HwcFlow"]},
+		{"name": "Return", "anchor": [1, 0.82, 1, 0]}
+	],
+	"items": [
+		{"name": "OperatingMode", "topc": 0.2, "left": 0}
+	]
+}

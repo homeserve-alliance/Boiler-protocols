@@ -1,0 +1,12 @@
+/var/log/ebusd*.log {
+	rotate 7
+	size 1M
+	copytruncate
+	compress
+	missingok
+	notifempty
+	daily
+	postrotate
+		/usr/bin/killall -HUP ebusd
+    endscript
+}
