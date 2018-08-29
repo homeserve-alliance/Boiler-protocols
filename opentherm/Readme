@@ -1,0 +1,1 @@
+This opentherm_demo1.ino, OpenTherm.cpp and OpenTherm.h files should go in a separate directory and ensure it doesn't use standard OT library functions rather use the OpenTherm.cpp functions
