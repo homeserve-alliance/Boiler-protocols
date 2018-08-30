@@ -1,7 +1,6 @@
 #!/bin/sh
-# ebusd-configuration - configuration files for ebusd, a daemon for
-# communication with eBUS heating systems.
-# Copyright (C) 2014-2016 John Baier <ebusd@ebusd.eu>
+# ebusd - daemon for communication with eBUS heating systems.
+# Copyright (C) 2014-2017 John Baier <ebusd@ebusd.eu>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,51 +15,133 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+keepbuilddir=
+if [ "x$1" = "x--keepbuilddir" ]; then
+  keepbuilddir=1
+  shift
+fi
+reusebuilddir=
+if [ "x$1" = "x--reusebuilddir" ]; then
+  reusebuilddir=1
+  shift
+fi
+
 echo "*************"
 echo " prepare"
 echo "*************"
 echo
-LANG=$1
-if [ -z "$LANG" ]; then
-  LANG="en"
+tags=`git fetch -t`
+if [ -n "$tags" ]; then
+  echo "tags were updated:"
+  echo $tags
+  echo "git pull is recommended. stopped."
+  exit 1
 fi
-GITVER=`git describe --always 2>/dev/null || (echo -n 'p'; date +%Y%m%d)`
 VERSION=`head -n 1 VERSION`
-VERSION="$VERSION.$GITVER-$LANG"
-ARCH="all"
+ARCH=`dpkg --print-architecture`
 BUILD="build-$ARCH"
-RELEASE="ebusd-configuration-$VERSION"
-PACKAGE="${RELEASE}_${ARCH}.deb"
-rm -rf "$BUILD"
+RELEASE="ebusd-$VERSION"
+PACKAGE="${RELEASE}_${ARCH}"
+if [ -n "$reusebuilddir" ]; then
+  echo "reusing build directory $BUILD"
+else
+  if [ -n "$keepbuilddir" ]; then
+    ./autogen.sh $@ || exit 1
+  fi
+  rm -rf "$BUILD"
+fi
 mkdir -p "$BUILD" || exit 1
 cd "$BUILD" || exit 1
+if [ -z "$reusebuilddir" ]; then
+  (tar cf - -C .. "--exclude=./$BUILD" --exclude=./.* "--exclude=*.o" "--exclude=*.a" .| tar xf -) || exit 1
+fi
+
+echo
+echo "*************"
+echo " build"
+echo "*************"
+echo
+if [ -n "$reusebuilddir" ] || [ -z "$keepbuilddir" ]; then
+  ./autogen.sh $@ || exit 1
+fi
+make DESTDIR="$PWD/$RELEASE" install-strip || exit 1
+extralibs=
+ldd $RELEASE/usr/bin/ebusd | egrep -q libmosquitto.so.0
+if [ $? -eq 0 ]; then
+  extralibs=', libmosquitto0'
+  PACKAGE="${PACKAGE}_mqtt0"
+else
+  ldd $RELEASE/usr/bin/ebusd | egrep -q libmosquitto.so.1
+  if [ $? -eq 0 ]; then
+    extralibs=', libmosquitto1'
+    PACKAGE="${PACKAGE}_mqtt1"
+  fi
+fi
 
 echo
 echo "*************"
 echo " pack"
 echo "*************"
 echo
-mkdir -p $RELEASE/DEBIAN $RELEASE/etc/ebusd || exit 1
-(tar cf - -C ../ebusd-2.1.x/$LANG "--exclude=./$BUILD" --exclude=./.* . | tar xf - -C $RELEASE/etc/ebusd) || exit 1
-
+mkdir -p $RELEASE/DEBIAN $RELEASE/etc/default $RELEASE/etc/logrotate.d || exit 1
+rm $RELEASE/usr/bin/ebusfeed
+if [ -d /run/systemd/system ]; then
+  mkdir -p $RELEASE/lib/systemd/system || exit 1
+  cp contrib/debian/systemd/ebusd.service $RELEASE/lib/systemd/system/ebusd.service || exit 1
+else
+  mkdir -p $RELEASE/etc/init.d || exit 1
+  cp contrib/debian/init.d/ebusd $RELEASE/etc/init.d/ebusd || exit 1
+fi
+  cp contrib/debian/default/ebusd $RELEASE/etc/default/ebusd || exit 1
+cp contrib/etc/logrotate.d/ebusd $RELEASE/etc/logrotate.d/ || exit 1
+cp ChangeLog.md $RELEASE/DEBIAN/changelog || exit 1
 cat <<EOF > $RELEASE/DEBIAN/control
-Package: ebusd-configuration
+Package: ebusd
 Version: $VERSION
 Section: net
 Priority: required
 Architecture: $ARCH
 Maintainer: John Baier <ebusd@ebusd.eu>
-Homepage: https://github.com/john30/ebusd-configuration
-Bugs: https://github.com/john30/ebusd-configuration/issues
-Depends: ebusd (>= 2.1)
-Description: ebusd configuration files ($LANG).
+Homepage: https://github.com/john30/ebusd
+Bugs: https://github.com/john30/ebusd/issues
+Depends: logrotate, libstdc++6 (>= 4.8.1), libc6, libgcc1$extralibs
+Description: eBUS daemon.
+ ebusd is a daemon for handling communication with eBUS devices connected to a
+ 2-wire bus system.
 EOF
 cat <<EOF > $RELEASE/DEBIAN/dirs
 /etc/ebusd
+/etc/default
+/etc/logrotate.d
+/usr/bin
 EOF
+if [ -d /run/systemd/system ]; then
+  echo /lib/systemd/system >> $RELEASE/DEBIAN/dirs
+  cat <<EOF > $RELEASE/DEBIAN/postinst
+#!/bin/sh
+echo "Instructions:"
+echo "1. Edit /etc/default/ebusd if necessary"
+echo "   (especially if your device is not /dev/ttyUSB0)"
+echo "2. Start the daemon with 'systemctl start ebusd'"
+echo "3. Check the log file /var/log/ebusd.log"
+echo "4. Make the daemon autostart with 'systemctl enable ebusd'"
+EOF
+else
+  echo /etc/init.d >> $RELEASE/DEBIAN/dirs
+  cat <<EOF > $RELEASE/DEBIAN/postinst
+#!/bin/sh
+echo "Instructions:"
+echo "1. Edit /etc/default/ebusd if necessary"
+echo "   (especially if your device is not /dev/ttyUSB0)"
+echo "2. Start the daemon with 'service ebusd start'"
+echo "3. Check the log file /var/log/ebusd.log"
+echo "4. Make the daemon autostart with 'update-rc.d ebusd enable'"
+EOF
+fi
+chmod 755 $RELEASE/DEBIAN/postinst
 
 dpkg -b $RELEASE || exit 1
-mv ebusd-configuration-$VERSION.deb "../$PACKAGE" || exit 1
+mv $RELEASE.deb "../${PACKAGE}.deb" || exit 1
 
 echo
 echo "*************"
@@ -68,8 +149,17 @@ echo " cleanup"
 echo "*************"
 echo
 cd ..
-rm -rf "$BUILD"
+if [ -n "$keepbuilddir" ]; then
+  echo "keeping build directory $BUILD"
+else
+  rm -rf "$BUILD"
+fi
 
 echo
-files=`dpkg -c "$PACKAGE"|wc -l`
-echo "Package created: $PACKAGE, $files files"
+echo "Package created: ${PACKAGE}.deb"
+echo
+echo "Info:"
+dpkg --info "${PACKAGE}.deb"
+echo
+echo "Content:"
+dpkg -c "${PACKAGE}.deb"
